@@ -149,6 +149,71 @@ const calculateAge = (birthDate: string): number => {
   return age
 }
 
+// Dados mockados
+const mockClients: Client[] = [
+  { 
+    id: '1', 
+    name: 'Ana Silva', 
+    age: 28, 
+    phone: '(11) 99999-1111', 
+    email: 'ana@email.com', 
+    emergencyPhone: '(11) 88888-1111',
+    gender: 'Feminino',
+    birthDate: '1996-03-15',
+    mainProblem: 'Ansiedade',
+    createdAt: '2024-01-15' 
+  },
+  { 
+    id: '2', 
+    name: 'Carlos Santos', 
+    age: 35, 
+    phone: '(11) 99999-2222', 
+    email: 'carlos@email.com', 
+    emergencyPhone: '(11) 88888-2222',
+    gender: 'Masculino',
+    birthDate: '1989-07-22',
+    mainProblem: 'Depressão',
+    createdAt: '2024-01-20' 
+  },
+  { 
+    id: '3', 
+    name: 'Maria Oliveira', 
+    age: 42, 
+    phone: '(11) 99999-3333', 
+    email: 'maria@email.com', 
+    emergencyPhone: '(11) 88888-3333',
+    gender: 'Feminino',
+    birthDate: '1982-11-08',
+    mainProblem: 'Estresse',
+    createdAt: '2024-02-01' 
+  },
+  { 
+    id: '4', 
+    name: 'João Costa', 
+    age: 31, 
+    phone: '(11) 99999-4444', 
+    email: 'joao@email.com', 
+    emergencyPhone: '(11) 88888-4444',
+    gender: 'Masculino',
+    birthDate: '1993-05-12',
+    mainProblem: 'Síndrome do Pânico',
+    createdAt: '2024-02-10' 
+  },
+]
+
+const mockSessions: Session[] = [
+  { id: '1', clientId: '1', clientName: 'Ana Silva', date: '2024-03-15', time: '14:00', type: 'online', status: 'agendada' },
+  { id: '2', clientId: '2', clientName: 'Carlos Santos', date: '2024-03-16', time: '10:00', type: 'presencial', status: 'confirmada' },
+  { id: '3', clientId: '3', clientName: 'Maria Oliveira', date: '2024-03-18', time: '16:00', type: 'online', status: 'agendada' },
+]
+
+const mockInvoices: Invoice[] = [
+  { id: '1', date: '2024-01-15', amount: 99.90, status: 'paga', description: 'Plano Profissional - Janeiro 2024' },
+  { id: '2', date: '2024-02-15', amount: 99.90, status: 'paga', description: 'Plano Profissional - Fevereiro 2024' },
+  { id: '3', date: '2024-03-15', amount: 99.90, status: 'atrasada', description: 'Plano Profissional - Março 2024' },
+  { id: '4', date: '2024-04-15', amount: 99.90, status: 'paga', description: 'Plano Profissional - Abril 2024' },
+]
+
 // Estados brasileiros para fuso horário - CORRIGIDO com IDs únicos
 const brazilianStates = [
   { id: 'sp', value: 'America/Sao_Paulo', label: 'São Paulo (GMT-3)' },
@@ -249,8 +314,8 @@ export default function MindCare() {
   const [currentView, setCurrentView] = useState('dashboard')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [loginData, setLoginData] = useState({ name: '', email: '', password: '' })
-  const [clients, setClients] = useState<Client[]>([])
-  const [sessions, setSessions] = useState<Session[]>([])
+  const [clients, setClients] = useState<Client[]>(mockClients)
+  const [sessions, setSessions] = useState<Session[]>(mockSessions)
   const [searchTerm, setSearchTerm] = useState('')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [user, setUser] = useState<User>({ 
@@ -1951,23 +2016,19 @@ export default function MindCare() {
                 {/* Clientes Recentes - SEM DATA DE CRIAÇÃO, COM IDADE CALCULADA */}
                 <div className="bg-white rounded-xl p-6 shadow-sm border">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4">Clientes Recentes</h3>
-                  {recentClients.length > 0 ? (
-                    <div className="space-y-3">
-                      {recentClients.map(client => (
-                        <div key={client.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium">
-                            {client.name.charAt(0)}
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-800">{client.name}</p>
-                            <p className="text-sm text-gray-600">{client.age} anos • {client.gender}</p>
-                          </div>
+                  <div className="space-y-3">
+                    {recentClients.map(client => (
+                      <div key={client.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                        <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium">
+                          {client.name.charAt(0)}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 text-center py-8">Nenhum cliente cadastrado ainda.</p>
-                  )}
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-800">{client.name}</p>
+                          <p className="text-sm text-gray-600">{client.age} anos • {client.gender}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -2042,59 +2103,51 @@ export default function MindCare() {
               </div>
 
               {/* Lista de Clientes - SEM DATA DE CRIAÇÃO, COM IDADE CALCULADA */}
-              {filteredClients.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredClients.map(client => {
-                    const clientAge = calculateAge(client.birthDate)
-                    return (
-                      <div key={client.id} className="bg-white rounded-xl p-6 shadow-sm border">
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-lg">
-                            {client.name.charAt(0)}
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-gray-800">{client.name}</h3>
-                            <p className="text-sm text-gray-600">{clientAge} anos</p>
-                          </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredClients.map(client => {
+                  const clientAge = calculateAge(client.birthDate)
+                  return (
+                    <div key={client.id} className="bg-white rounded-xl p-6 shadow-sm border">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-lg">
+                          {client.name.charAt(0)}
                         </div>
-                        
-                        <div className="space-y-2 mb-4">
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Phone size={16} />
-                            {client.phone}
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Mail size={16} />
-                            {client.email}
-                          </div>
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => handleViewClientDetails(client)}
-                            className="flex-1 bg-blue-50 text-blue-600 py-2 px-3 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
-                          >
-                            <Eye size={16} />
-                            Ver Detalhes
-                          </button>
-                          <button
-                            onClick={() => handleDeleteClient(client.id)}
-                            className="bg-red-50 text-red-600 py-2 px-3 rounded-lg hover:bg-red-100 transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                        <div>
+                          <h3 className="font-semibold text-gray-800">{client.name}</h3>
+                          <p className="text-sm text-gray-600">{clientAge} anos</p>
                         </div>
                       </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="bg-white rounded-xl p-12 shadow-sm border text-center">
-                  <Users className="mx-auto text-gray-400 mb-4" size={48} />
-                  <p className="text-gray-500 text-lg mb-2">Nenhum cliente cadastrado ainda</p>
-                  <p className="text-gray-400 text-sm">Clique em "Criar Pasta" para adicionar seu primeiro cliente</p>
-                </div>
-              )}
+                      
+                      <div className="space-y-2 mb-4">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Phone size={16} />
+                          {client.phone}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Mail size={16} />
+                          {client.email}
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => handleViewClientDetails(client)}
+                          className="flex-1 bg-blue-50 text-blue-600 py-2 px-3 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Eye size={16} />
+                          Ver Detalhes
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClient(client.id)}
+                          className="bg-red-50 text-red-600 py-2 px-3 rounded-lg hover:bg-red-100 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
 
@@ -2181,48 +2234,44 @@ export default function MindCare() {
               {/* Lista de Sessões - SEM DATA, APENAS HORÁRIO, TIPO E STATUS */}
               <div className="bg-white rounded-xl p-6 shadow-sm border">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Próximas Sessões</h3>
-                {sessions.filter(s => s.status === 'agendada' || s.status === 'confirmada').length > 0 ? (
-                  <div className="space-y-3">
-                    {sessions.filter(s => s.status === 'agendada' || s.status === 'confirmada').map(session => (
-                      <div key={session.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium">
-                            {session.clientName.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-800">{session.clientName}</p>
-                            <p className="text-sm text-gray-600">
-                              {session.time} - {session.type}
-                            </p>
-                            <p className="text-xs text-gray-500 capitalize">Status: {session.status}</p>
-                          </div>
+                <div className="space-y-3">
+                  {sessions.filter(s => s.status === 'agendada' || s.status === 'confirmada').map(session => (
+                    <div key={session.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium">
+                          {session.clientName.charAt(0)}
                         </div>
-                        <div className="flex gap-2">
-                          {session.status === 'agendada' ? (
-                            <button 
-                              onClick={() => handleConfirmSession(session.id)}
-                              className="bg-green-50 text-green-600 px-3 py-1 rounded-lg text-sm hover:bg-green-100"
-                            >
-                              Confirmar
-                            </button>
-                          ) : (
-                            <span className="bg-green-100 text-green-800 px-3 py-1 rounded-lg text-sm">
-                              Confirmado
-                            </span>
-                          )}
-                          <button 
-                            onClick={() => handleCancelSession(session.id)}
-                            className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-sm hover:bg-red-100"
-                          >
-                            Cancelar
-                          </button>
+                        <div>
+                          <p className="font-medium text-gray-800">{session.clientName}</p>
+                          <p className="text-sm text-gray-600">
+                            {session.time} - {session.type}
+                          </p>
+                          <p className="text-xs text-gray-500 capitalize">Status: {session.status}</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-8">Nenhuma sessão agendada.</p>
-                )}
+                      <div className="flex gap-2">
+                        {session.status === 'agendada' ? (
+                          <button 
+                            onClick={() => handleConfirmSession(session.id)}
+                            className="bg-green-50 text-green-600 px-3 py-1 rounded-lg text-sm hover:bg-green-100"
+                          >
+                            Confirmar
+                          </button>
+                        ) : (
+                          <span className="bg-green-100 text-green-800 px-3 py-1 rounded-lg text-sm">
+                            Confirmado
+                          </span>
+                        )}
+                        <button 
+                          onClick={() => handleCancelSession(session.id)}
+                          className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-sm hover:bg-red-100"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -2653,7 +2702,26 @@ export default function MindCare() {
               </button>
             </div>
             
-            <p className="text-gray-500 text-center py-8">Nenhuma fatura registrada ainda.</p>
+            <div className="space-y-3">
+              {mockInvoices.map(invoice => (
+                <div key={invoice.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="font-medium text-gray-800">{invoice.description}</p>
+                    <p className="text-sm text-gray-600">{new Date(invoice.date).toLocaleDateString('pt-BR')}</p>
+                    <p className="text-sm font-medium text-gray-800">R$ {invoice.amount.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <span className={`px-3 py-1 rounded-full text-sm ${
+                      invoice.status === 'paga' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {invoice.status === 'paga' ? 'Paga' : 'Atrasada'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
