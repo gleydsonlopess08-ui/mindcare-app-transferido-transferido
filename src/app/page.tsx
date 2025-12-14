@@ -2,7 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { Calendar, Users, Settings, CreditCard, LayoutDashboard, Plus, Search, ChevronLeft, ChevronRight, Eye, EyeOff, Trash2, User, Phone, Mail, Clock, LogOut, Bell, UserCircle, Brain, X, FileText, TrendingUp, StickyNote, Edit, LineChart, ArrowUp, Crown, Menu } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+// Criar client do Supabase APENAS dentro do componente client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 // Tipos de planos
 type PlanType = 'start' | 'pro' | 'infinity'
