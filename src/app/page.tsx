@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { Calendar, Users, Settings, CreditCard, LayoutDashboard, Plus, Search, ChevronLeft, ChevronRight, Eye, EyeOff, Trash2, User, Phone, Mail, Clock, LogOut, Bell, UserCircle, Brain, X, FileText, TrendingUp, StickyNote, Edit, LineChart, ArrowUp, Crown } from 'lucide-react'
+import { Calendar, Users, Settings, CreditCard, LayoutDashboard, Plus, Search, ChevronLeft, ChevronRight, Eye, EyeOff, Trash2, User, Phone, Mail, Clock, LogOut, Bell, UserCircle, Brain, X, FileText, TrendingUp, StickyNote, Edit, LineChart, ArrowUp, Crown, Menu } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 // Tipos de planos
 type PlanType = 'start' | 'pro' | 'infinity'
@@ -248,7 +249,7 @@ const fichaModels = {
 export default function MindCare() {
   const [currentView, setCurrentView] = useState('dashboard')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [loginData, setLoginData] = useState({ name: '', email: '', password: '' })
+  const [loginData, setLoginData] = useState({ email: '', password: '' })
   const [clients, setClients] = useState<Client[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -288,6 +289,9 @@ export default function MindCare() {
   const [editingNota, setEditingNota] = useState<string | null>(null)
   const [editNotaContent, setEditNotaContent] = useState('')
   const [loginMode, setLoginMode] = useState<'login' | 'register' | 'forgot'>('login')
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
   const [newClient, setNewClient] = useState({ 
     name: '', 
     age: '', 
@@ -334,6 +338,28 @@ export default function MindCare() {
     relatorios: true
   })
 
+  // Verificar sessão do Supabase ao carregar
+  useEffect(() => {
+    checkSession()
+  }, [])
+
+  const checkSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) {
+      setIsAuthenticated(true)
+      setUser({
+        ...user,
+        name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
+        email: session.user.email || ''
+      })
+      setTempUser({
+        ...tempUser,
+        name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
+        email: session.user.email || ''
+      })
+    }
+  }
+
   // Verificar se recurso está disponível no plano
   const canUseFeature = (feature: keyof Plan['features']): boolean => {
     const currentPlan = plans[user.currentPlan]
@@ -353,83 +379,147 @@ export default function MindCare() {
     setTimeout(() => setSuccessMessage(''), 3000)
   }
 
-  // Função de login - ATUALIZADA para aceitar nome
-  const handleLogin = (e: React.FormEvent) => {
+  // Função de login com Supabase
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Validação básica - deve ter nome, email e senha válidos
-    if (loginData.name && loginData.email && loginData.password && loginData.password.length >= 6) {
-      setIsAuthenticated(true)
-      // Salvar dados de login no localStorage
-      localStorage.setItem('mindcare_user', JSON.stringify({
-        name: loginData.name,
+    setAuthError('')
+    setAuthLoading(true)
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: loginData.email,
-        isAuthenticated: true
-      }))
-      // Atualizar estado do usuário
-      setUser({ ...user, name: loginData.name, email: loginData.email })
-      setTempUser({ ...user, name: loginData.name, email: loginData.email })
-    } else {
-      alert('Nome, email e senha são obrigatórios. A senha deve ter pelo menos 6 caracteres.')
+        password: loginData.password
+      })
+
+      if (error) {
+        setAuthError(error.message === 'Invalid login credentials' 
+          ? 'Email ou senha incorretos' 
+          : error.message)
+        setAuthLoading(false)
+        return
+      }
+
+      if (data.user) {
+        setIsAuthenticated(true)
+        setUser({
+          ...user,
+          name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'Usuário',
+          email: data.user.email || ''
+        })
+        setTempUser({
+          ...tempUser,
+          name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'Usuário',
+          email: data.user.email || ''
+        })
+      }
+    } catch (err) {
+      setAuthError('Erro ao fazer login. Tente novamente.')
+    } finally {
+      setAuthLoading(false)
     }
   }
 
-  // Verificar se usuário já está logado ao carregar a página
-  useEffect(() => {
-    const savedUser = localStorage.getItem('mindcare_user')
-    if (savedUser) {
-      const userData = JSON.parse(savedUser)
-      if (userData.isAuthenticated) {
-        setIsAuthenticated(true)
-        setLoginData({ ...loginData, email: userData.email, name: userData.name || '' })
-        // Carregar nome do usuário se existir
-        if (userData.name) {
-          setUser({ ...user, name: userData.name, email: userData.email })
-          setTempUser({ ...user, name: userData.name, email: userData.email })
-        }
-      }
-    }
-  }, [])
-
-  // Função de cadastro - ATUALIZADA para salvar nome
-  const handleRegister = (e: React.FormEvent) => {
+  // Função de cadastro com Supabase
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
+    setAuthError('')
+    setAuthLoading(true)
     
     // Validar campos obrigatórios
     if (!registerData.name || !registerData.email || !registerData.password) {
-      alert('Todos os campos são obrigatórios!')
+      setAuthError('Todos os campos são obrigatórios!')
+      setAuthLoading(false)
       return
     }
     
     if (registerData.password.length < 6) {
-      alert('A senha deve ter pelo menos 6 caracteres!')
+      setAuthError('A senha deve ter pelo menos 6 caracteres!')
+      setAuthLoading(false)
       return
     }
     
-    // Salvar usuário no localStorage
-    localStorage.setItem('mindcare_user', JSON.stringify({
-      name: registerData.name,
-      email: registerData.email,
-      isAuthenticated: true
-    }))
-    
-    // Atualizar estado do usuário
-    setUser({ ...user, name: registerData.name, email: registerData.email })
-    setTempUser({ ...user, name: registerData.name, email: registerData.email })
-    
-    // Fazer login automaticamente
-    setIsAuthenticated(true)
-    
-    // Limpar formulário
-    setRegisterData({ name: '', fullName: '', phone: '', email: '', password: '' })
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: registerData.email,
+        password: registerData.password,
+        options: {
+          data: {
+            name: registerData.name,
+            phone: registerData.phone
+          }
+        }
+      })
+
+      if (error) {
+        setAuthError(error.message)
+        setAuthLoading(false)
+        return
+      }
+
+      if (data.user) {
+        // Login automático após cadastro
+        setIsAuthenticated(true)
+        setUser({
+          ...user,
+          name: registerData.name,
+          email: registerData.email
+        })
+        setTempUser({
+          ...tempUser,
+          name: registerData.name,
+          email: registerData.email
+        })
+        
+        // Limpar formulário
+        setRegisterData({ name: '', fullName: '', phone: '', email: '', password: '' })
+        showSuccessMessage('Cadastro realizado com sucesso!')
+      }
+    } catch (err) {
+      setAuthError('Erro ao criar conta. Tente novamente.')
+    } finally {
+      setAuthLoading(false)
+    }
   }
 
-  // Função de esqueci minha senha
-  const handleForgotPassword = (e: React.FormEvent) => {
+  // Função de esqueci minha senha com Supabase
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Simular envio de email de redefinição
-    alert('Link de redefinição de senha enviado para seu email!')
-    setLoginMode('login')
-    setForgotPasswordEmail('')
+    setAuthError('')
+    setAuthLoading(true)
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
+        redirectTo: `${window.location.origin}/alterar-senha`
+      })
+
+      if (error) {
+        setAuthError(error.message)
+        setAuthLoading(false)
+        return
+      }
+
+      showSuccessMessage('Link de redefinição enviado para seu email!')
+      setLoginMode('login')
+      setForgotPasswordEmail('')
+    } catch (err) {
+      setAuthError('Erro ao enviar email. Tente novamente.')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  // Função de logout
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setIsAuthenticated(false)
+    setUser({
+      name: 'Dr. João Silva',
+      email: 'joao@mindcare.com',
+      timezone: 'America/Sao_Paulo',
+      currentPlan: 'pro',
+      planStatus: 'active',
+      nextBilling: '2024-04-15'
+    })
   }
 
   // Função para adicionar cliente - CORRIGIDA para calcular idade automaticamente
@@ -527,12 +617,6 @@ export default function MindCare() {
   // Função para salvar configurações de PERFIL - ATUALIZADA para salvar no localStorage
   const handleSaveProfileSettings = () => {
     setUser(tempUser)
-    // Salvar no localStorage
-    localStorage.setItem('mindcare_user', JSON.stringify({
-      name: tempUser.name,
-      email: tempUser.email,
-      isAuthenticated: true
-    }))
     showSuccessMessage('Configurações de Perfil salvas com sucesso!')
   }
 
@@ -576,6 +660,7 @@ export default function MindCare() {
   const handleViewClientDetails = (client: Client) => {
     setSelectedClient(client)
     setClientDetailTab('dados-gerais')
+    setIsMobileMenuOpen(false)
   }
 
   // Função para selecionar tipo de ficha
@@ -819,16 +904,16 @@ export default function MindCare() {
     }
 
     return (
-      <div className="bg-gradient-to-br from-white to-gray-50 p-8 rounded-2xl border-2 border-gray-100 shadow-lg">
+      <div className="bg-gradient-to-br from-white to-gray-50 p-4 sm:p-8 rounded-2xl border-2 border-gray-100 shadow-lg">
         <div className="flex items-center justify-between mb-6">
-          <h4 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+          <h4 className="text-lg sm:text-xl font-bold text-gray-800 flex items-center gap-2">
             <LineChart className="text-blue-600" size={24} />
             Gráfico de Evolução Temporal
           </h4>
         </div>
         
-        <div className="relative bg-white p-6 rounded-xl border border-gray-200" style={{ height: chartHeight, width: '100%' }}>
-          <svg width="100%" height="100%">
+        <div className="relative bg-white p-4 sm:p-6 rounded-xl border border-gray-200 overflow-x-auto" style={{ minHeight: chartHeight }}>
+          <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet">
             {/* Grid horizontal */}
             {[0, 2, 4, 6, 8, 10].map(value => {
               const y = getY(value)
@@ -1001,7 +1086,7 @@ export default function MindCare() {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md">
           <div className="text-center mb-8">
             {/* Logo do Cérebro */}
             <div className="flex justify-center mb-4">
@@ -1009,38 +1094,34 @@ export default function MindCare() {
                 <Brain className="text-white" size={32} />
               </div>
             </div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">MindCare</h1>
-            <p className="text-gray-600">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">MindCare</h1>
+            <p className="text-sm sm:text-base text-gray-600">
               {loginMode === 'login' && 'Faça login para continuar'}
               {loginMode === 'register' && 'Crie sua conta'}
               {loginMode === 'forgot' && 'Redefinir senha'}
             </p>
           </div>
+
+          {/* Mensagem de Erro */}
+          {authError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-800 text-sm text-center">{authError}</p>
+            </div>
+          )}
           
           {/* Formulário de Login */}
           {loginMode === 'login' && (
-            <form onSubmit={handleLogin} className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Nome</label>
-                <input
-                  type="text"
-                  value={loginData.name}
-                  onChange={(e) => setLoginData({...loginData, name: e.target.value})}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Seu nome"
-                  required
-                />
-              </div>
-
+            <form onSubmit={handleLogin} className="space-y-4 sm:space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                 <input
                   type="email"
                   value={loginData.email}
                   onChange={(e) => setLoginData({...loginData, email: e.target.value})}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   placeholder="seu@email.com"
                   required
+                  disabled={authLoading}
                 />
               </div>
               
@@ -1051,14 +1132,16 @@ export default function MindCare() {
                     type={showPasswordLogin ? "text" : "password"}
                     value={loginData.password}
                     onChange={(e) => setLoginData({...loginData, password: e.target.value})}
-                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                     placeholder="••••••••"
                     required
+                    disabled={authLoading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPasswordLogin(!showPasswordLogin)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    disabled={authLoading}
                   >
                     {showPasswordLogin ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
@@ -1067,9 +1150,10 @@ export default function MindCare() {
               
               <button
                 type="submit"
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                disabled={authLoading}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm sm:text-base disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Entrar
+                {authLoading ? 'Entrando...' : 'Entrar'}
               </button>
             </form>
           )}
@@ -1083,9 +1167,10 @@ export default function MindCare() {
                   type="text"
                   value={registerData.name}
                   onChange={(e) => setRegisterData({...registerData, name: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   placeholder="Seu nome completo"
                   required
+                  disabled={authLoading}
                 />
               </div>
               
@@ -1095,8 +1180,9 @@ export default function MindCare() {
                   type="tel"
                   value={registerData.phone}
                   onChange={(e) => setRegisterData({...registerData, phone: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   placeholder="(11) 99999-9999"
+                  disabled={authLoading}
                 />
               </div>
               
@@ -1106,9 +1192,10 @@ export default function MindCare() {
                   type="email"
                   value={registerData.email}
                   onChange={(e) => setRegisterData({...registerData, email: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   placeholder="seu@email.com"
                   required
+                  disabled={authLoading}
                 />
               </div>
               
@@ -1119,14 +1206,16 @@ export default function MindCare() {
                     type={showPasswordRegister ? "text" : "password"}
                     value={registerData.password}
                     onChange={(e) => setRegisterData({...registerData, password: e.target.value})}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     placeholder="••••••••"
                     required
+                    disabled={authLoading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPasswordRegister(!showPasswordRegister)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    disabled={authLoading}
                   >
                     {showPasswordRegister ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -1135,9 +1224,10 @@ export default function MindCare() {
               
               <button
                 type="submit"
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={authLoading}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Cadastrar-se
+                {authLoading ? 'Cadastrando...' : 'Cadastrar-se'}
               </button>
             </form>
           )}
@@ -1151,17 +1241,19 @@ export default function MindCare() {
                   type="email"
                   value={forgotPasswordEmail}
                   onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   placeholder="seu@email.com"
                   required
+                  disabled={authLoading}
                 />
               </div>
               
               <button
                 type="submit"
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={authLoading}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Enviar Link
+                {authLoading ? 'Enviando...' : 'Enviar Link'}
               </button>
             </form>
           )}
@@ -1171,14 +1263,22 @@ export default function MindCare() {
             {loginMode === 'login' && (
               <>
                 <button 
-                  onClick={() => setLoginMode('register')}
+                  onClick={() => {
+                    setLoginMode('register')
+                    setAuthError('')
+                  }}
                   className="w-full text-blue-600 hover:text-blue-700 transition-colors text-sm font-medium"
+                  disabled={authLoading}
                 >
                   Cadastrar-se
                 </button>
                 <button 
-                  onClick={() => setLoginMode('forgot')}
+                  onClick={() => {
+                    setLoginMode('forgot')
+                    setAuthError('')
+                  }}
                   className="w-full text-gray-600 hover:text-gray-700 transition-colors text-sm"
+                  disabled={authLoading}
                 >
                   Esqueci minha senha
                 </button>
@@ -1187,8 +1287,12 @@ export default function MindCare() {
             
             {(loginMode === 'register' || loginMode === 'forgot') && (
               <button 
-                onClick={() => setLoginMode('login')}
+                onClick={() => {
+                  setLoginMode('login')
+                  setAuthError('')
+                }}
                 className="w-full text-gray-600 hover:text-gray-700 transition-colors text-sm"
+                disabled={authLoading}
               >
                 Voltar ao login
               </button>
@@ -1206,8 +1310,8 @@ export default function MindCare() {
     
     return (
       <div className="flex h-screen bg-gray-50">
-        {/* Menu Lateral */}
-        <div className="w-64 bg-white shadow-lg flex flex-col">
+        {/* Menu Lateral Desktop */}
+        <div className="hidden lg:flex w-64 bg-white shadow-lg flex-col">
           <div className="p-6 border-b">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center">
@@ -1229,31 +1333,39 @@ export default function MindCare() {
         </div>
 
         {/* Conteúdo Principal - Detalhes do Cliente */}
-        <div className="flex-1 flex flex-col">
-          {/* Cabeçalho */}
-          <header className="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-lg">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Cabeçalho Mobile/Desktop */}
+          <header className="bg-white shadow-sm border-b px-4 sm:px-6 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-3 sm:gap-4">
+              {/* Botão Voltar Mobile */}
+              <button
+                onClick={() => setSelectedClient(null)}
+                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-base sm:text-lg">
                 {selectedClient.name.charAt(0)}
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-800">{selectedClient.name}</h2>
-                <p className="text-gray-600">{clientAge} anos • {selectedClient.gender}</p>
+                <h2 className="text-lg sm:text-xl font-bold text-gray-800">{selectedClient.name}</h2>
+                <p className="text-sm text-gray-600">{clientAge} anos • {selectedClient.gender}</p>
               </div>
             </div>
             
             <button
-              onClick={() => setIsAuthenticated(false)}
+              onClick={handleLogout}
               className="flex items-center gap-2 text-gray-600 hover:text-red-600 transition-colors"
             >
               <LogOut size={20} />
-              Sair
+              <span className="hidden sm:inline">Sair</span>
             </button>
           </header>
 
-          {/* Abas */}
-          <div className="bg-white border-b px-6">
-            <div className="flex space-x-8">
+          {/* Abas - Scroll Horizontal Mobile */}
+          <div className="bg-white border-b px-4 sm:px-6 overflow-x-auto">
+            <div className="flex space-x-4 sm:space-x-8 min-w-max">
               {[
                 { id: 'dados-gerais', label: 'Dados Gerais', icon: User },
                 { id: 'fichas', label: 'Fichas', icon: FileText },
@@ -1265,59 +1377,59 @@ export default function MindCare() {
                   <button
                     key={tab.id}
                     onClick={() => setClientDetailTab(tab.id)}
-                    className={`flex items-center gap-2 py-4 px-2 border-b-2 transition-colors ${
+                    className={`flex items-center gap-2 py-4 px-2 border-b-2 transition-colors whitespace-nowrap ${
                       clientDetailTab === tab.id
                         ? 'border-blue-600 text-blue-600'
                         : 'border-transparent text-gray-600 hover:text-gray-800'
                     }`}
                   >
                     <Icon size={18} />
-                    {tab.label}
+                    <span className="text-sm sm:text-base">{tab.label}</span>
                   </button>
                 )
               })}
             </div>
           </div>
 
-          {/* Conteúdo das Abas */}
-          <main className="flex-1 p-6 overflow-auto">
+          {/* Conteúdo das Abas - Scroll Vertical */}
+          <main className="flex-1 p-4 sm:p-6 overflow-auto">
             {/* Dados Gerais */}
             {clientDetailTab === 'dados-gerais' && (
               <div className="space-y-6">
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Informações Pessoais</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Informações Pessoais</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
-                      <p className="text-gray-900">{selectedClient.name}</p>
+                      <p className="text-sm sm:text-base text-gray-900">{selectedClient.name}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Idade</label>
-                      <p className="text-gray-900">{clientAge} anos</p>
+                      <p className="text-sm sm:text-base text-gray-900">{clientAge} anos</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Gênero</label>
-                      <p className="text-gray-900">{selectedClient.gender}</p>
+                      <p className="text-sm sm:text-base text-gray-900">{selectedClient.gender}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Data de Nascimento</label>
-                      <p className="text-gray-900">{new Date(selectedClient.birthDate).toLocaleDateString('pt-BR')}</p>
+                      <p className="text-sm sm:text-base text-gray-900">{new Date(selectedClient.birthDate).toLocaleDateString('pt-BR')}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-                      <p className="text-gray-900">{selectedClient.phone}</p>
+                      <p className="text-sm sm:text-base text-gray-900">{selectedClient.phone}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Telefone de Emergência</label>
-                      <p className="text-gray-900">{selectedClient.emergencyPhone}</p>
+                      <p className="text-sm sm:text-base text-gray-900">{selectedClient.emergencyPhone}</p>
                     </div>
-                    <div className="md:col-span-2">
+                    <div className="sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
-                      <p className="text-gray-900">{selectedClient.email}</p>
+                      <p className="text-sm sm:text-base text-gray-900 break-all">{selectedClient.email}</p>
                     </div>
-                    <div className="md:col-span-2">
+                    <div className="sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Problema Principal</label>
-                      <p className="text-gray-900">{selectedClient.mainProblem}</p>
+                      <p className="text-sm sm:text-base text-gray-900">{selectedClient.mainProblem}</p>
                     </div>
                   </div>
                 </div>
@@ -1327,8 +1439,8 @@ export default function MindCare() {
             {/* Fichas */}
             {clientDetailTab === 'fichas' && (
               <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-gray-800">Fichas do Cliente</h3>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-800">Fichas do Cliente</h3>
                   <button
                     onClick={() => {
                       if (!canUseFeature('templates')) {
@@ -1337,20 +1449,20 @@ export default function MindCare() {
                       }
                       setShowNewFichaForm(true)
                     }}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                    className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm"
                   >
                     <Plus size={20} />
                     Nova Ficha
                   </button>
                 </div>
                 
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
                   {clientFichas.length > 0 ? (
                     <div className="space-y-4">
                       {clientFichas.map(ficha => (
                         <div key={ficha.id} className="p-4 bg-gray-50 rounded-lg">
                           <div className="flex justify-between items-start mb-2">
-                            <h4 className="font-medium text-gray-800">{ficha.type}</h4>
+                            <h4 className="font-medium text-gray-800 text-sm sm:text-base">{ficha.type}</h4>
                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleEditFicha(ficha)}
@@ -1369,8 +1481,8 @@ export default function MindCare() {
                             </div>
                           </div>
                           <div className="flex justify-between items-center">
-                            <p className="text-sm text-gray-600">Ficha preenchida e salva</p>
-                            <span className="text-sm text-gray-500">
+                            <p className="text-xs sm:text-sm text-gray-600">Ficha preenchida e salva</p>
+                            <span className="text-xs sm:text-sm text-gray-500">
                               {new Date(ficha.createdAt).toLocaleDateString('pt-BR')}
                             </span>
                           </div>
@@ -1378,17 +1490,16 @@ export default function MindCare() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-8">Nenhuma ficha criada ainda. Clique em "Nova Ficha" para começar.</p>
-                  )}
-                </div>
+                    <p className="text-gray-500 text-center py-8 text-sm">Nenhuma ficha criada ainda. Clique em "Nova Ficha" para começar.</p>
+                  )}</div>
               </div>
             )}
 
             {/* Evolução */}
             {clientDetailTab === 'evolucao' && (
               <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-gray-800">Evolução do Cliente</h3>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-800">Evolução do Cliente</h3>
                   <button
                     onClick={() => {
                       if (!canUseFeature('evolution')) {
@@ -1397,7 +1508,7 @@ export default function MindCare() {
                       }
                       setShowNewEvolucaoForm(true)
                     }}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                    className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm"
                   >
                     <Plus size={20} />
                     Nova Entrada
@@ -1409,16 +1520,16 @@ export default function MindCare() {
                   <>
                     {clientEvolucao.length > 0 && renderLineChart()}
                     
-                    <div className="bg-white rounded-xl p-6 shadow-sm border">
+                    <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
                       {clientEvolucao.length > 0 ? (
                         <div className="space-y-4">
-                          <h4 className="text-lg font-semibold text-gray-800 mb-4">Histórico de Entradas</h4>
+                          <h4 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Histórico de Entradas</h4>
                           {clientEvolucao.map(entry => (
                             <div key={entry.id} className="p-4 bg-gray-50 rounded-lg">
                               <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-medium text-gray-800">{entry.sintomaPrincipal}</h4>
+                                <h4 className="font-medium text-gray-800 text-sm sm:text-base">{entry.sintomaPrincipal}</h4>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm text-gray-500">
+                                  <span className="text-xs sm:text-sm text-gray-500">
                                     {new Date(entry.createdAt).toLocaleDateString('pt-BR')}
                                   </span>
                                   <button
@@ -1431,15 +1542,15 @@ export default function MindCare() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-600">Intensidade:</span>
-                                <div className="flex items-center gap-1">
-                                  <div className="w-32 bg-gray-200 rounded-full h-2">
+                                <span className="text-xs sm:text-sm text-gray-600">Intensidade:</span>
+                                <div className="flex items-center gap-1 flex-1">
+                                  <div className="flex-1 max-w-xs bg-gray-200 rounded-full h-2">
                                     <div 
                                       className="bg-blue-600 h-2 rounded-full" 
                                       style={{ width: `${(entry.nota / 10) * 100}%` }}
                                     ></div>
                                   </div>
-                                  <span className="text-sm font-medium text-gray-800">{entry.nota}/10</span>
+                                  <span className="text-xs sm:text-sm font-medium text-gray-800">{entry.nota}/10</span>
                                 </div>
                               </div>
                             </div>
@@ -1449,24 +1560,24 @@ export default function MindCare() {
                         <div className="flex items-center justify-center h-64">
                           <div className="text-center">
                             <LineChart className="mx-auto text-gray-400 mb-4" size={48} />
-                            <p className="text-gray-500">Nenhuma entrada de evolução ainda</p>
-                            <p className="text-sm text-gray-400 mt-2">Clique em "Nova Entrada" para começar</p>
+                            <p className="text-gray-500 text-sm">Nenhuma entrada de evolução ainda</p>
+                            <p className="text-xs sm:text-sm text-gray-400 mt-2">Clique em "Nova Entrada" para começar</p>
                           </div>
                         </div>
                       )}
                     </div>
                   </>
                 ) : (
-                  <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl p-8 shadow-sm border-2 border-purple-200">
+                  <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl p-6 sm:p-8 shadow-sm border-2 border-purple-200">
                     <div className="text-center">
                       <Crown className="mx-auto text-purple-600 mb-4" size={48} />
-                      <h4 className="text-xl font-bold text-gray-800 mb-2">Recurso Premium</h4>
-                      <p className="text-gray-600 mb-4">
+                      <h4 className="text-lg sm:text-xl font-bold text-gray-800 mb-2">Recurso Premium</h4>
+                      <p className="text-sm sm:text-base text-gray-600 mb-4">
                         O gráfico de evolução está disponível apenas no Plano Infinity
                       </p>
                       <button
                         onClick={() => setShowUpgradePlan(true)}
-                        className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                        className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
                       >
                         Fazer Upgrade
                       </button>
@@ -1479,24 +1590,24 @@ export default function MindCare() {
             {/* Notas */}
             {clientDetailTab === 'notas' && (
               <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-gray-800">Notas do Cliente</h3>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-800">Notas do Cliente</h3>
                   <button 
                     onClick={() => setShowNewNotaForm(true)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                    className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm"
                   >
                     <Plus size={20} />
                     Nova Nota
                   </button>
                 </div>
                 
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
                   {clientNotas.length > 0 ? (
                     <div className="space-y-4">
                       {clientNotas.map(nota => (
                         <div key={nota.id} className="p-4 bg-gray-50 rounded-lg">
                           <div className="flex justify-between items-start mb-2">
-                            <span className="text-sm text-gray-500">
+                            <span className="text-xs sm:text-sm text-gray-500">
                               {new Date(nota.createdAt).toLocaleDateString('pt-BR')} às {new Date(nota.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                             <div className="flex gap-2">
@@ -1521,32 +1632,32 @@ export default function MindCare() {
                               <textarea
                                 value={editNotaContent}
                                 onChange={(e) => setEditNotaContent(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                 rows={3}
                               />
                               <div className="flex gap-2">
                                 <button
                                   onClick={() => handleSaveEditNota(nota.id)}
-                                  className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition-colors"
+                                  className="bg-blue-600 text-white px-3 py-1 rounded text-xs sm:text-sm hover:bg-blue-700 transition-colors"
                                 >
                                   Salvar
                                 </button>
                                 <button
                                   onClick={handleCancelEditNota}
-                                  className="bg-gray-100 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-200 transition-colors"
+                                  className="bg-gray-100 text-gray-700 px-3 py-1 rounded text-xs sm:text-sm hover:bg-gray-200 transition-colors"
                                 >
                                   Cancelar
                                 </button>
                               </div>
                             </div>
                           ) : (
-                            <p className="text-gray-800">{nota.content}</p>
+                            <p className="text-sm sm:text-base text-gray-800">{nota.content}</p>
                           )}
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-8">Nenhuma nota adicionada ainda.</p>
+                    <p className="text-gray-500 text-center py-8 text-sm">Nenhuma nota adicionada ainda.</p>
                   )}
                 </div>
               </div>
@@ -1556,9 +1667,9 @@ export default function MindCare() {
 
         {/* Modal Nova Ficha */}
         {showNewFichaForm && (
-          <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto my-8">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">
                 {selectedFichaType ? `Ficha: ${selectedFichaType}` : 'Selecionar Tipo de Ficha'}
               </h3>
               
@@ -1568,7 +1679,7 @@ export default function MindCare() {
                     <button
                       key={type}
                       onClick={() => handleSelectFichaType(type)}
-                      className="w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors text-gray-800"
+                      className="w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors text-gray-800 text-sm sm:text-base"
                     >
                       {type}
                     </button>
@@ -1577,7 +1688,7 @@ export default function MindCare() {
                   <div className="flex gap-3 pt-4 mt-4 border-t border-gray-200">
                     <button
                       onClick={() => setShowNewFichaForm(false)}
-                      className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                     >
                       Cancelar
                     </button>
@@ -1596,7 +1707,7 @@ export default function MindCare() {
                             type="text"
                             value={fichaData[field.name] || ''}
                             onChange={(e) => setFichaData({...fichaData, [field.name]: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                           />
                         )}
                         {field.type === 'number' && (
@@ -1604,14 +1715,14 @@ export default function MindCare() {
                             type="number"
                             value={fichaData[field.name] || ''}
                             onChange={(e) => setFichaData({...fichaData, [field.name]: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                           />
                         )}
                         {field.type === 'select' && (
                           <select
                             value={fichaData[field.name] || ''}
                             onChange={(e) => setFichaData({...fichaData, [field.name]: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                           >
                             <option value="">Selecione...</option>
                             {field.options?.map(option => (
@@ -1623,7 +1734,7 @@ export default function MindCare() {
                           <textarea
                             value={fichaData[field.name] || ''}
                             onChange={(e) => setFichaData({...fichaData, [field.name]: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                             rows={3}
                           />
                         )}
@@ -1631,14 +1742,14 @@ export default function MindCare() {
                     ))}
                   </div>
                   
-                  <div className="flex gap-3 pt-4 mt-4 border-t border-gray-200">
+                  <div className="flex flex-col sm:flex-row gap-3 pt-4 mt-4 border-t border-gray-200">
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedFichaType('')
                         setFichaData({})
                       }}
-                      className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                     >
                       Voltar
                     </button>
@@ -1649,13 +1760,13 @@ export default function MindCare() {
                         setSelectedFichaType('')
                         setFichaData({})
                       }}
-                      className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                     >
                       Cancelar
                     </button>
                     <button
                       type="submit"
-                      className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                      className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                     >
                       Salvar Ficha
                     </button>
@@ -1668,9 +1779,9 @@ export default function MindCare() {
 
         {/* Modal Nova Nota */}
         {showNewNotaForm && (
-          <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Nova Nota</h3>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-2xl">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Nova Nota</h3>
               
               <form onSubmit={handleAddNota} className="space-y-4">
                 <div>
@@ -1678,24 +1789,24 @@ export default function MindCare() {
                   <textarea
                     value={newNota}
                     onChange={(e) => setNewNota(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     rows={6}
                     placeholder="Escreva sua anotação sobre o paciente..."
                     required
                   />
                 </div>
                 
-                <div className="flex gap-3 pt-4">
+                <div className="flex flex-col sm:flex-row gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => setShowNewNotaForm(false)}
-                    className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                   >
                     Salvar Nota
                   </button>
@@ -1707,9 +1818,9 @@ export default function MindCare() {
 
         {/* Modal Nova Evolução */}
         {showNewEvolucaoForm && (
-          <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Nova Entrada de Evolução</h3>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-md">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Nova Entrada de Evolução</h3>
               
               <form onSubmit={handleAddEvolucao} className="space-y-4">
                 <div>
@@ -1718,7 +1829,7 @@ export default function MindCare() {
                     type="text"
                     value={newEvolucao.sintomaPrincipal}
                     onChange={(e) => setNewEvolucao({...newEvolucao, sintomaPrincipal: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     placeholder="Ex: Ansiedade, Depressão, Estresse..."
                     required
                   />
@@ -1742,17 +1853,17 @@ export default function MindCare() {
                   </div>
                 </div>
                 
-                <div className="flex gap-3 pt-4">
+                <div className="flex flex-col sm:flex-row gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => setShowNewEvolucaoForm(false)}
-                    className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                   >
                     Salvar
                   </button>
@@ -1766,9 +1877,9 @@ export default function MindCare() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Menu Lateral */}
-      <div className="w-64 bg-white shadow-lg flex flex-col">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Menu Lateral Desktop */}
+      <div className="hidden lg:flex w-64 bg-white shadow-lg flex-col">
         <div className="p-6 border-b">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center">
@@ -1833,11 +1944,66 @@ export default function MindCare() {
         </nav>
       </div>
 
+      {/* Menu Mobile - Bottom Navigation */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-40">
+        <div className="flex justify-around items-center py-2">
+          <button
+            onClick={() => setCurrentView('dashboard')}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+              currentView === 'dashboard' ? 'text-blue-600' : 'text-gray-600'
+            }`}
+          >
+            <LayoutDashboard size={20} />
+            <span className="text-xs">Dashboard</span>
+          </button>
+          
+          <button
+            onClick={() => setCurrentView('clients')}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+              currentView === 'clients' ? 'text-blue-600' : 'text-gray-600'
+            }`}
+          >
+            <Users size={20} />
+            <span className="text-xs">Clientes</span>
+          </button>
+          
+          <button
+            onClick={() => setCurrentView('agenda')}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+              currentView === 'agenda' ? 'text-blue-600' : 'text-gray-600'
+            }`}
+          >
+            <Calendar size={20} />
+            <span className="text-xs">Agenda</span>
+          </button>
+          
+          <button
+            onClick={() => setCurrentView('subscription')}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+              currentView === 'subscription' ? 'text-blue-600' : 'text-gray-600'
+            }`}
+          >
+            <CreditCard size={20} />
+            <span className="text-xs">Assinatura</span>
+          </button>
+          
+          <button
+            onClick={() => setCurrentView('settings')}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+              currentView === 'settings' ? 'text-blue-600' : 'text-gray-600'
+            }`}
+          >
+            <Settings size={20} />
+            <span className="text-xs">Config</span>
+          </button>
+        </div>
+      </div>
+
       {/* Conteúdo Principal */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Cabeçalho */}
-        <header className="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center">
-          <div className="text-gray-600">
+        <header className="bg-white shadow-sm border-b px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
+          <div className="text-xs sm:text-sm text-gray-600">
             {new Date().toLocaleDateString('pt-BR', { 
               weekday: 'long', 
               year: 'numeric', 
@@ -1847,110 +2013,107 @@ export default function MindCare() {
           </div>
           
           <button
-            onClick={() => {
-              setIsAuthenticated(false)
-              localStorage.removeItem('mindcare_user')
-            }}
+            onClick={handleLogout}
             className="flex items-center gap-2 text-gray-600 hover:text-red-600 transition-colors"
           >
-            <LogOut size={20} />
-            Sair
+            <LogOut size={18} />
+            <span className="hidden sm:inline text-sm">Sair</span>
           </button>
         </header>
 
         {/* Mensagem de Sucesso */}
         {successMessage && (
-          <div className="bg-green-500 text-white px-6 py-3 text-center">
+          <div className="bg-green-500 text-white px-4 sm:px-6 py-2 sm:py-3 text-center text-sm">
             {successMessage}
           </div>
         )}
 
-        {/* Área de Conteúdo */}
-        <main className="flex-1 p-6 overflow-auto">
+        {/* Área de Conteúdo - Com padding bottom para mobile menu */}
+        <main className="flex-1 p-4 sm:p-6 overflow-auto pb-20 lg:pb-6">
           {/* Dashboard */}
           {currentView === 'dashboard' && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               {/* Header de Boas-vindas - NOME DINÂMICO */}
-              <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl p-6 text-white">
-                <h2 className="text-2xl font-bold mb-2">Bem-vindo(a), {user.name} 👋</h2>
-                <p className="text-blue-100">Aqui está um resumo das suas atividades.</p>
+              <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl p-4 sm:p-6 text-white">
+                <h2 className="text-xl sm:text-2xl font-bold mb-2">Bem-vindo(a), {user.name} 👋</h2>
+                <p className="text-sm sm:text-base text-blue-100">Aqui está um resumo das suas atividades.</p>
               </div>
 
               {/* Cards de Estatísticas */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm">Total de Clientes</p>
-                      <p className="text-3xl font-bold text-gray-800">{totalClients}</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-2">
+                    <div className="flex-1">
+                      <p className="text-gray-600 text-xs sm:text-sm">Total de Clientes</p>
+                      <p className="text-2xl sm:text-3xl font-bold text-gray-800">{totalClients}</p>
                       {plans[user.currentPlan].features.maxClients !== 'unlimited' && (
-                        <p className="text-gray-500 text-sm">
+                        <p className="text-gray-500 text-xs sm:text-sm">
                           Limite: {plans[user.currentPlan].features.maxClients}
                         </p>
                       )}
                     </div>
-                    <Users className="text-blue-600" size={32} />
+                    <Users className="text-blue-600" size={24} />
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm">Sessões da Semana</p>
-                      <p className="text-3xl font-bold text-gray-800">{weekSessions}</p>
-                      <p className="text-green-600 text-sm">+1 vs semana anterior</p>
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-2">
+                    <div className="flex-1">
+                      <p className="text-gray-600 text-xs sm:text-sm">Sessões da Semana</p>
+                      <p className="text-2xl sm:text-3xl font-bold text-gray-800">{weekSessions}</p>
+                      <p className="text-green-600 text-xs sm:text-sm">+1 vs semana anterior</p>
                     </div>
-                    <Calendar className="text-blue-600" size={32} />
+                    <Calendar className="text-blue-600" size={24} />
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm">Sessões Perdidas</p>
-                      <p className="text-3xl font-bold text-gray-800">{missedSessions}</p>
-                      <p className="text-red-600 text-sm">Este mês</p>
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-2">
+                    <div className="flex-1">
+                      <p className="text-gray-600 text-xs sm:text-sm">Sessões Perdidas</p>
+                      <p className="text-2xl sm:text-3xl font-bold text-gray-800">{missedSessions}</p>
+                      <p className="text-red-600 text-xs sm:text-sm">Este mês</p>
                     </div>
-                    <Clock className="text-red-600" size={32} />
+                    <Clock className="text-red-600" size={24} />
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm">Sessões de Hoje</p>
-                      <p className="text-3xl font-bold text-gray-800">{todaySessions.length}</p>
-                      <p className="text-blue-600 text-sm">Agendadas para hoje</p>
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-2">
+                    <div className="flex-1">
+                      <p className="text-gray-600 text-xs sm:text-sm">Sessões de Hoje</p>
+                      <p className="text-2xl sm:text-3xl font-bold text-gray-800">{todaySessions.length}</p>
+                      <p className="text-blue-600 text-xs sm:text-sm">Agendadas para hoje</p>
                     </div>
-                    <Calendar className="text-blue-600" size={32} />
+                    <Calendar className="text-blue-600" size={24} />
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                 {/* Sessões de Hoje */}
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Sessões de Hoje</h3>
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Sessões de Hoje</h3>
                   {todaySessions.length > 0 ? (
                     <div className="space-y-3">
                       {todaySessions.map(session => (
                         <div key={session.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                           <div>
-                            <p className="font-medium text-gray-800">{session.clientName}</p>
-                            <p className="text-sm text-gray-600">{session.time} - {session.type}</p>
+                            <p className="font-medium text-gray-800 text-sm sm:text-base">{session.clientName}</p>
+                            <p className="text-xs sm:text-sm text-gray-600">{session.time} - {session.type}</p>
                           </div>
                           <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-8">Nenhuma sessão agendada para hoje.</p>
+                    <p className="text-gray-500 text-center py-8 text-sm">Nenhuma sessão agendada para hoje.</p>
                   )}
                 </div>
 
                 {/* Clientes Recentes - SEM DATA DE CRIAÇÃO, COM IDADE CALCULADA */}
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Clientes Recentes</h3>
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Clientes Recentes</h3>
                   {recentClients.length > 0 ? (
                     <div className="space-y-3">
                       {recentClients.map(client => (
@@ -1959,22 +2122,22 @@ export default function MindCare() {
                             {client.name.charAt(0)}
                           </div>
                           <div className="flex-1">
-                            <p className="font-medium text-gray-800">{client.name}</p>
-                            <p className="text-sm text-gray-600">{client.age} anos • {client.gender}</p>
+                            <p className="font-medium text-gray-800 text-sm sm:text-base">{client.name}</p>
+                            <p className="text-xs sm:text-sm text-gray-600">{client.age} anos • {client.gender}</p>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-8">Nenhum cliente cadastrado ainda.</p>
+                    <p className="text-gray-500 text-center py-8 text-sm">Nenhum cliente cadastrado ainda.</p>
                   )}
                 </div>
               </div>
 
               {/* Ações Rápidas */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Ações Rápidas</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Ações Rápidas</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                   <button
                     onClick={() => {
                       if (!canAddClient()) {
@@ -1986,7 +2149,7 @@ export default function MindCare() {
                     className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                   >
                     <Plus className="text-blue-600" size={24} />
-                    <span className="font-medium text-blue-600">Criar Pasta</span>
+                    <span className="font-medium text-blue-600 text-sm sm:text-base">Criar Pasta</span>
                   </button>
                   
                   <button
@@ -1994,7 +2157,7 @@ export default function MindCare() {
                     className="flex items-center gap-3 p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
                   >
                     <Calendar className="text-green-600" size={24} />
-                    <span className="font-medium text-green-600">Agendar Sessão</span>
+                    <span className="font-medium text-green-600 text-sm sm:text-base">Agendar Sessão</span>
                   </button>
                   
                   <button
@@ -2002,7 +2165,7 @@ export default function MindCare() {
                     className="flex items-center gap-3 p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
                   >
                     <Users className="text-purple-600" size={24} />
-                    <span className="font-medium text-purple-600">Ver Clientes</span>
+                    <span className="font-medium text-purple-600 text-sm sm:text-base">Ver Clientes</span>
                   </button>
                 </div>
               </div>
@@ -2011,9 +2174,9 @@ export default function MindCare() {
 
           {/* Clientes - SEM DATA DE CRIAÇÃO, COM IDADE CALCULADA */}
           {currentView === 'clients' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-800">Clientes</h2>
+            <div className="space-y-4 sm:space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Clientes</h2>
                 <button
                   onClick={() => {
                     if (!canAddClient()) {
@@ -2022,7 +2185,7 @@ export default function MindCare() {
                     }
                     setShowNewClientForm(true)
                   }}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                  className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm"
                 >
                   <Plus size={20} />
                   Criar Pasta
@@ -2037,42 +2200,42 @@ export default function MindCare() {
                   placeholder="Buscar por nome, email ou telefone..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
               </div>
 
               {/* Lista de Clientes - SEM DATA DE CRIAÇÃO, COM IDADE CALCULADA */}
               {filteredClients.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {filteredClients.map(client => {
                     const clientAge = calculateAge(client.birthDate)
                     return (
-                      <div key={client.id} className="bg-white rounded-xl p-6 shadow-sm border">
+                      <div key={client.id} className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
                         <div className="flex items-center gap-3 mb-4">
-                          <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-lg">
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-base sm:text-lg">
                             {client.name.charAt(0)}
                           </div>
                           <div>
-                            <h3 className="font-semibold text-gray-800">{client.name}</h3>
-                            <p className="text-sm text-gray-600">{clientAge} anos</p>
+                            <h3 className="font-semibold text-gray-800 text-sm sm:text-base">{client.name}</h3>
+                            <p className="text-xs sm:text-sm text-gray-600">{clientAge} anos</p>
                           </div>
                         </div>
                         
                         <div className="space-y-2 mb-4">
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Phone size={16} />
-                            {client.phone}
+                          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
+                            <Phone size={14} />
+                            <span className="truncate">{client.phone}</span>
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Mail size={16} />
-                            {client.email}
+                          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
+                            <Mail size={14} />
+                            <span className="truncate">{client.email}</span>
                           </div>
                         </div>
                         
                         <div className="flex gap-2">
                           <button 
                             onClick={() => handleViewClientDetails(client)}
-                            className="flex-1 bg-blue-50 text-blue-600 py-2 px-3 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
+                            className="flex-1 bg-blue-50 text-blue-600 py-2 px-3 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 text-xs sm:text-sm"
                           >
                             <Eye size={16} />
                             Ver Detalhes
@@ -2089,10 +2252,10 @@ export default function MindCare() {
                   })}
                 </div>
               ) : (
-                <div className="bg-white rounded-xl p-12 shadow-sm border text-center">
+                <div className="bg-white rounded-xl p-8 sm:p-12 shadow-sm border text-center">
                   <Users className="mx-auto text-gray-400 mb-4" size={48} />
-                  <p className="text-gray-500 text-lg mb-2">Nenhum cliente cadastrado ainda</p>
-                  <p className="text-gray-400 text-sm">Clique em "Criar Pasta" para adicionar seu primeiro cliente</p>
+                  <p className="text-gray-500 text-base sm:text-lg mb-2">Nenhum cliente cadastrado ainda</p>
+                  <p className="text-gray-400 text-xs sm:text-sm">Clique em "Criar Pasta" para adicionar seu primeiro cliente</p>
                 </div>
               )}
             </div>
@@ -2100,9 +2263,9 @@ export default function MindCare() {
 
           {/* Agenda - SEM DATA NA LISTA DE SESSÕES */}
           {currentView === 'agenda' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-800">Agenda</h2>
+            <div className="space-y-4 sm:space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Agenda</h2>
                 <button
                   onClick={() => {
                     if (!canUseFeature('scheduling')) {
@@ -2111,7 +2274,7 @@ export default function MindCare() {
                     }
                     setShowNewSessionForm(true)
                   }}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                  className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm"
                 >
                   <Plus size={20} />
                   Agendar Sessão
@@ -2119,7 +2282,7 @@ export default function MindCare() {
               </div>
 
               {/* Navegação do Calendário */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border">
+              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
                 <div className="flex justify-between items-center mb-6">
                   <button
                     onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))}
@@ -2128,7 +2291,7 @@ export default function MindCare() {
                     <ChevronLeft size={20} />
                   </button>
                   
-                  <h3 className="text-xl font-semibold text-gray-800">
+                  <h3 className="text-base sm:text-xl font-semibold text-gray-800">
                     {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
                   </h3>
                   
@@ -2141,15 +2304,15 @@ export default function MindCare() {
                 </div>
 
                 {/* Calendário Real */}
-                <div className="grid grid-cols-7 gap-2 mb-4">
+                <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-4">
                   {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
-                    <div key={day} className="p-2 text-center font-medium text-gray-600">
+                    <div key={day} className="p-2 text-center font-medium text-gray-600 text-xs sm:text-sm">
                       {day}
                     </div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-7 gap-2">
+                <div className="grid grid-cols-7 gap-1 sm:gap-2">
                   {generateCalendar(currentDate).map((date, i) => {
                     const isCurrentMonth = date.getMonth() === currentDate.getMonth()
                     const isToday = date.toDateString() === new Date().toDateString()
@@ -2159,16 +2322,16 @@ export default function MindCare() {
                     return (
                       <div
                         key={i}
-                        className={`p-2 text-center rounded-lg min-h-[60px] border ${
+                        className={`p-1 sm:p-2 text-center rounded-lg min-h-[40px] sm:min-h-[60px] border text-xs sm:text-sm ${
                           isToday ? 'bg-blue-100 border-blue-300 text-blue-800' :
                           isCurrentMonth ? 'text-gray-800 border-gray-200' : 'text-gray-400 border-gray-100'
                         } ${daySession ? 'bg-gradient-to-br from-blue-100 to-purple-100 border-blue-200' : 'hover:bg-gray-50'}`}
                       >
-                        <div className={`text-sm font-medium ${isToday ? 'font-bold' : ''}`}>
+                        <div className={`font-medium ${isToday ? 'font-bold' : ''}`}>
                           {date.getDate()}
                         </div>
                         {daySession && (
-                          <div className="text-xs mt-1 bg-blue-600 text-white px-1 py-0.5 rounded truncate">
+                          <div className="text-[10px] sm:text-xs mt-1 bg-blue-600 text-white px-1 py-0.5 rounded truncate">
                             {daySession.clientName}
                           </div>
                         )}
@@ -2179,40 +2342,40 @@ export default function MindCare() {
               </div>
 
               {/* Lista de Sessões - SEM DATA, APENAS HORÁRIO, TIPO E STATUS */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Próximas Sessões</h3>
+              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Próximas Sessões</h3>
                 {sessions.filter(s => s.status === 'agendada' || s.status === 'confirmada').length > 0 ? (
                   <div className="space-y-3">
                     {sessions.filter(s => s.status === 'agendada' || s.status === 'confirmada').map(session => (
-                      <div key={session.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div key={session.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-gray-50 rounded-lg gap-3">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium">
                             {session.clientName.charAt(0)}
                           </div>
                           <div>
-                            <p className="font-medium text-gray-800">{session.clientName}</p>
-                            <p className="text-sm text-gray-600">
+                            <p className="font-medium text-gray-800 text-sm sm:text-base">{session.clientName}</p>
+                            <p className="text-xs sm:text-sm text-gray-600">
                               {session.time} - {session.type}
                             </p>
                             <p className="text-xs text-gray-500 capitalize">Status: {session.status}</p>
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 w-full sm:w-auto">
                           {session.status === 'agendada' ? (
                             <button 
                               onClick={() => handleConfirmSession(session.id)}
-                              className="bg-green-50 text-green-600 px-3 py-1 rounded-lg text-sm hover:bg-green-100"
+                              className="flex-1 sm:flex-none bg-green-50 text-green-600 px-3 py-1 rounded-lg text-xs sm:text-sm hover:bg-green-100"
                             >
                               Confirmar
                             </button>
                           ) : (
-                            <span className="bg-green-100 text-green-800 px-3 py-1 rounded-lg text-sm">
+                            <span className="flex-1 sm:flex-none bg-green-100 text-green-800 px-3 py-1 rounded-lg text-xs sm:text-sm text-center">
                               Confirmado
                             </span>
                           )}
                           <button 
                             onClick={() => handleCancelSession(session.id)}
-                            className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-sm hover:bg-red-100"
+                            className="flex-1 sm:flex-none bg-red-50 text-red-600 px-3 py-1 rounded-lg text-xs sm:text-sm hover:bg-red-100"
                           >
                             Cancelar
                           </button>
@@ -2221,7 +2384,7 @@ export default function MindCare() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-8">Nenhuma sessão agendada.</p>
+                  <p className="text-gray-500 text-center py-8 text-sm">Nenhuma sessão agendada.</p>
                 )}
               </div>
             </div>
@@ -2229,26 +2392,26 @@ export default function MindCare() {
 
           {/* Assinatura - COMPLETA COM PLANOS */}
           {currentView === 'subscription' && (
-            <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-gray-800">Assinatura</h2>
+            <div className="space-y-4 sm:space-y-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Assinatura</h2>
 
-              <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
+              <div className="grid grid-cols-1 gap-4 sm:gap-6">
                 {/* Informações do Plano Atual */}
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-gray-800">Plano Atual</h3>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-800">Plano Atual</h3>
                     <Crown className="text-yellow-500" size={24} />
                   </div>
                   
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Plano</span>
-                      <span className="font-medium text-gray-800">{plans[user.currentPlan].name}</span>
+                      <span className="text-gray-600 text-sm sm:text-base">Plano</span>
+                      <span className="font-medium text-gray-800 text-sm sm:text-base">{plans[user.currentPlan].name}</span>
                     </div>
                     
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Status</span>
-                      <span className={`px-3 py-1 rounded-full text-sm ${
+                      <span className="text-gray-600 text-sm sm:text-base">Status</span>
+                      <span className={`px-3 py-1 rounded-full text-xs sm:text-sm ${
                         user.planStatus === 'active' 
                           ? 'bg-green-100 text-green-800' 
                           : 'bg-red-100 text-red-800'
@@ -2258,15 +2421,15 @@ export default function MindCare() {
                     </div>
                     
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Preço</span>
-                      <span className="font-medium text-gray-800">
+                      <span className="text-gray-600 text-sm sm:text-base">Preço</span>
+                      <span className="font-medium text-gray-800 text-sm sm:text-base">
                         R$ {plans[user.currentPlan].price.toFixed(2)}/mês
                       </span>
                     </div>
                     
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Próxima cobrança</span>
-                      <span className="font-medium text-gray-800">
+                      <span className="text-gray-600 text-sm sm:text-base">Próxima cobrança</span>
+                      <span className="font-medium text-gray-800 text-sm sm:text-base">
                         {new Date(user.nextBilling).toLocaleDateString('pt-BR')}
                       </span>
                     </div>
@@ -2274,34 +2437,34 @@ export default function MindCare() {
                     <div className="pt-4 border-t border-gray-200">
                       <h4 className="text-sm font-semibold text-gray-700 mb-3">Recursos do seu plano:</h4>
                       <ul className="space-y-2">
-                        <li className="flex items-center gap-2 text-sm text-gray-600">
+                        <li className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
                           <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
                           {plans[user.currentPlan].features.support}
                         </li>
-                        <li className="flex items-center gap-2 text-sm text-gray-600">
+                        <li className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
                           <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
                           {plans[user.currentPlan].features.maxClients === 'unlimited' 
                             ? 'Pastas de clientes ilimitadas' 
                             : `Até ${plans[user.currentPlan].features.maxClients} pastas de clientes`}
                         </li>
-                        <li className="flex items-center gap-2 text-sm text-gray-600">
+                        <li className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
                           <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
                           Agendamentos de sessões
                         </li>
                         {plans[user.currentPlan].features.reminders && (
-                          <li className="flex items-center gap-2 text-sm text-gray-600">
+                          <li className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
                             <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
                             Lembretes de sessões
                           </li>
                         )}
                         {plans[user.currentPlan].features.templates && (
-                          <li className="flex items-center gap-2 text-sm text-gray-600">
+                          <li className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
                             <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
                             Modelos de fichas prontas
                           </li>
                         )}
                         {plans[user.currentPlan].features.evolution && (
-                          <li className="flex items-center gap-2 text-sm text-gray-600">
+                          <li className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
                             <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
                             Gráfico de evolução do cliente
                           </li>
@@ -2310,25 +2473,25 @@ export default function MindCare() {
                     </div>
                   </div>
 
-                  <div className="flex gap-3 mt-6">
+                  <div className="flex flex-col sm:flex-row gap-3 mt-6">
                     <button 
                       onClick={() => setShowUpgradePlan(true)}
-                      className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-colors flex items-center justify-center gap-2 text-sm"
                     >
                       <ArrowUp size={20} />
                       Fazer Upgrade
                     </button>
                     <button 
                       onClick={() => setShowInvoiceHistory(true)}
-                      className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                      className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm"
                     >
-                      Ver Histórico de Faturas
+                      Ver Histórico
                     </button>
                     <button 
                       onClick={() => setShowCancelSubscription(true)}
-                      className="bg-red-50 text-red-600 py-2 px-4 rounded-lg hover:bg-red-100 transition-colors"
+                      className="bg-red-50 text-red-600 py-2 px-4 rounded-lg hover:bg-red-100 transition-colors text-sm"
                     >
-                      Cancelar Assinatura
+                      Cancelar
                     </button>
                   </div>
                 </div>
@@ -2338,15 +2501,15 @@ export default function MindCare() {
 
           {/* Configurações - COM BOTÕES DE SALVAR SEPARADOS, SEM FUSO HORÁRIO */}
           {currentView === 'settings' && (
-            <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-gray-800">Configurações</h2>
+            <div className="space-y-4 sm:space-y-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Configurações</h2>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                 {/* Perfil - SEM FUSO HORÁRIO */}
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
                   <div className="flex items-center gap-2 mb-4">
                     <UserCircle className="text-blue-600" size={24} />
-                    <h3 className="text-lg font-semibold text-gray-800">Perfil</h3>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-800">Perfil</h3>
                   </div>
                   
                   <div className="space-y-4">
@@ -2356,7 +2519,7 @@ export default function MindCare() {
                         type="text"
                         value={tempUser.name}
                         onChange={(e) => setTempUser({...tempUser, name: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                       />
                     </div>
                     
@@ -2366,13 +2529,13 @@ export default function MindCare() {
                         type="email"
                         value={tempUser.email}
                         onChange={(e) => setTempUser({...tempUser, email: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                       />
                     </div>
                     
                     <button 
                       onClick={handleSaveProfileSettings}
-                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm"
                     >
                       Salvar Alterações
                     </button>
@@ -2380,15 +2543,15 @@ export default function MindCare() {
                 </div>
 
                 {/* Notificações - SEM "NOVOS CLIENTES" */}
-                <div className="bg-white rounded-xl p-6 shadow-sm border">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border">
                   <div className="flex items-center gap-2 mb-4">
                     <Bell className="text-blue-600" size={24} />
-                    <h3 className="text-lg font-semibold text-gray-800">Notificações</h3>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-800">Notificações</h3>
                   </div>
                   
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-700">Notificações por Email</span>
+                      <span className="text-gray-700 text-sm sm:text-base">Notificações por Email</span>
                       <input 
                         type="checkbox" 
                         className="w-4 h-4 text-blue-600" 
@@ -2398,7 +2561,7 @@ export default function MindCare() {
                     </div>
                     
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-700">Lembrete de Sessões</span>
+                      <span className="text-gray-700 text-sm sm:text-base">Lembrete de Sessões</span>
                       <input 
                         type="checkbox" 
                         className="w-4 h-4 text-blue-600" 
@@ -2408,7 +2571,7 @@ export default function MindCare() {
                     </div>
                     
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-700">Relatórios Mensais</span>
+                      <span className="text-gray-700 text-sm sm:text-base">Relatórios Mensais</span>
                       <input 
                         type="checkbox" 
                         className="w-4 h-4 text-blue-600" 
@@ -2419,7 +2582,7 @@ export default function MindCare() {
                     
                     <button 
                       onClick={handleSaveNotificationSettings}
-                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm"
                     >
                       Salvar Alterações
                     </button>
@@ -2433,19 +2596,19 @@ export default function MindCare() {
 
       {/* Modal Novo Cliente */}
       {showNewClientForm && (
-        <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Criar Nova Pasta</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto my-8">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Criar Nova Pasta</h3>
             
             <form onSubmit={handleAddClient} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Nome Completo</label>
                   <input
                     type="text"
                     value={newClient.name}
                     onChange={(e) => setNewClient({...newClient, name: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     required
                   />
                 </div>
@@ -2456,20 +2619,20 @@ export default function MindCare() {
                     type="email"
                     value={newClient.email}
                     onChange={(e) => setNewClient({...newClient, email: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     required
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Telefone</label>
                   <input
                     type="tel"
                     value={newClient.phone}
                     onChange={(e) => setNewClient({...newClient, phone: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     required
                   />
                 </div>
@@ -2480,19 +2643,19 @@ export default function MindCare() {
                     type="tel"
                     value={newClient.emergencyPhone}
                     onChange={(e) => setNewClient({...newClient, emergencyPhone: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     required
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Gênero</label>
                   <select
                     value={newClient.gender}
                     onChange={(e) => setNewClient({...newClient, gender: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     required
                   >
                     <option value="">Selecione</option>
@@ -2509,7 +2672,7 @@ export default function MindCare() {
                     type="date"
                     value={newClient.birthDate}
                     onChange={(e) => setNewClient({...newClient, birthDate: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     required
                   />
                 </div>
@@ -2520,24 +2683,24 @@ export default function MindCare() {
                 <textarea
                   value={newClient.mainProblem}
                   onChange={(e) => setNewClient({...newClient, mainProblem: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   rows={3}
                   placeholder="Descreva brevemente o problema principal do cliente..."
                   required
                 />
               </div>
               
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowNewClientForm(false)}
-                  className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                 >
                   Criar Pasta
                 </button>
@@ -2549,9 +2712,9 @@ export default function MindCare() {
 
       {/* Modal Nova Sessão */}
       {showNewSessionForm && (
-        <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Agendar Nova Sessão</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-md">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">Agendar Nova Sessão</h3>
             
             <form onSubmit={handleAddSession} className="space-y-4">
               <div>
@@ -2559,7 +2722,7 @@ export default function MindCare() {
                 <select
                   value={newSession.clientId}
                   onChange={(e) => setNewSession({...newSession, clientId: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   required
                 >
                   <option value="">Selecione um cliente</option>
@@ -2575,7 +2738,7 @@ export default function MindCare() {
                   type="date"
                   value={newSession.date}
                   onChange={(e) => setNewSession({...newSession, date: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   required
                 />
               </div>
@@ -2586,7 +2749,7 @@ export default function MindCare() {
                   type="time"
                   value={newSession.time}
                   onChange={(e) => setNewSession({...newSession, time: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   required
                 />
               </div>
@@ -2596,7 +2759,7 @@ export default function MindCare() {
                 <select
                   value={newSession.type}
                   onChange={(e) => setNewSession({...newSession, type: e.target.value as 'online' | 'presencial'})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   required
                 >
                   <option value="online">Online</option>
@@ -2609,7 +2772,7 @@ export default function MindCare() {
                 <select
                   value={newSession.status}
                   onChange={(e) => setNewSession({...newSession, status: e.target.value as 'agendada' | 'confirmada' | 'cancelada' | 'faltou'})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   required
                 >
                   <option value="agendada">Agendada</option>
@@ -2619,17 +2782,17 @@ export default function MindCare() {
                 </select>
               </div>
               
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowNewSessionForm(false)}
-                  className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                 >
                   Agendar
                 </button>
@@ -2641,10 +2804,10 @@ export default function MindCare() {
 
       {/* Modal Histórico de Faturas */}
       {showInvoiceHistory && (
-        <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Histórico de Faturas</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-gray-800">Histórico de Faturas</h3>
               <button
                 onClick={() => setShowInvoiceHistory(false)}
                 className="text-gray-600 hover:text-gray-800"
@@ -2653,17 +2816,17 @@ export default function MindCare() {
               </button>
             </div>
             
-            <p className="text-gray-500 text-center py-8">Nenhuma fatura registrada ainda.</p>
+            <p className="text-gray-500 text-center py-8 text-sm">Nenhuma fatura registrada ainda.</p>
           </div>
         </div>
       )}
 
       {/* Modal Cancelar Assinatura */}
       {showCancelSubscription && (
-        <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Cancelar Assinatura</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-gray-800">Cancelar Assinatura</h3>
               <button
                 onClick={() => setShowCancelSubscription(false)}
                 className="text-gray-600 hover:text-gray-800"
@@ -2680,24 +2843,24 @@ export default function MindCare() {
                 <textarea
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   rows={4}
                   placeholder="Descreva o motivo do cancelamento..."
                   required
                 />
               </div>
               
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowCancelSubscription(false)}
-                  className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors text-sm"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors"
+                  className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors text-sm"
                 >
                   Confirmar Cancelamento
                 </button>
@@ -2709,10 +2872,10 @@ export default function MindCare() {
 
       {/* Modal Upgrade de Plano */}
       {showUpgradePlan && (
-        <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto my-8">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold text-gray-800">Escolha seu Plano</h3>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">Escolha seu Plano</h3>
               <button
                 onClick={() => setShowUpgradePlan(false)}
                 className="text-gray-600 hover:text-gray-800"
@@ -2721,39 +2884,39 @@ export default function MindCare() {
               </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
               {/* Plano Start */}
-              <div className={`border-2 rounded-xl p-6 ${
+              <div className={`border-2 rounded-xl p-4 sm:p-6 ${
                 user.currentPlan === 'start' 
                   ? 'border-blue-600 bg-blue-50' 
                   : 'border-gray-200 hover:border-blue-300'
               }`}>
-                <h4 className="text-xl font-bold text-gray-800 mb-2">Plano Start</h4>
-                <p className="text-3xl font-bold text-blue-600 mb-4">
-                  R$ 47<span className="text-lg text-gray-600">/mês</span>
+                <h4 className="text-lg sm:text-xl font-bold text-gray-800 mb-2">Plano Start</h4>
+                <p className="text-2xl sm:text-3xl font-bold text-blue-600 mb-4">
+                  R$ 47<span className="text-base sm:text-lg text-gray-600">/mês</span>
                 </p>
                 <ul className="space-y-3 mb-6">
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-1.5"></div>
                     Suporte horário comercial (10h-18h)
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-1.5"></div>
                     15 pastas de clientes
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-1.5"></div>
                     Agendamentos de sessões
                   </li>
                 </ul>
                 {user.currentPlan === 'start' ? (
-                  <button disabled className="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded-lg cursor-not-allowed">
+                  <button disabled className="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded-lg cursor-not-allowed text-sm">
                     Plano Atual
                   </button>
                 ) : (
                   <button
                     onClick={() => handleUpgradePlan('start')}
-                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm"
                   >
                     Selecionar
                   </button>
@@ -2761,44 +2924,44 @@ export default function MindCare() {
               </div>
 
               {/* Plano Pro */}
-              <div className={`border-2 rounded-xl p-6 ${
+              <div className={`border-2 rounded-xl p-4 sm:p-6 ${
                 user.currentPlan === 'pro' 
                   ? 'border-purple-600 bg-purple-50' 
                   : 'border-gray-200 hover:border-purple-300'
               }`}>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xl font-bold text-gray-800">Plano Pro</h4>
+                  <h4 className="text-lg sm:text-xl font-bold text-gray-800">Plano Pro</h4>
                   <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">Popular</span>
                 </div>
-                <p className="text-3xl font-bold text-purple-600 mb-4">
-                  R$ 97<span className="text-lg text-gray-600">/mês</span>
+                <p className="text-2xl sm:text-3xl font-bold text-purple-600 mb-4">
+                  R$ 97<span className="text-base sm:text-lg text-gray-600">/mês</span>
                 </p>
                 <ul className="space-y-3 mb-6">
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-purple-600 rounded-full mt-1.5"></div>
                     Suporte 24 horas
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-purple-600 rounded-full mt-1.5"></div>
                     65 pastas de clientes
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-purple-600 rounded-full mt-1.5"></div>
                     Agendamentos e lembretes
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-purple-600 rounded-full mt-1.5"></div>
                     Modelos de fichas prontas
                   </li>
                 </ul>
                 {user.currentPlan === 'pro' ? (
-                  <button disabled className="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded-lg cursor-not-allowed">
+                  <button disabled className="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded-lg cursor-not-allowed text-sm">
                     Plano Atual
                   </button>
                 ) : (
                   <button
                     onClick={() => handleUpgradePlan('pro')}
-                    className="w-full bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors"
+                    className="w-full bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors text-sm"
                   >
                     Selecionar
                   </button>
@@ -2806,48 +2969,48 @@ export default function MindCare() {
               </div>
 
               {/* Plano Infinity */}
-              <div className={`border-2 rounded-xl p-6 ${
+              <div className={`border-2 rounded-xl p-4 sm:p-6 ${
                 user.currentPlan === 'infinity' 
                   ? 'border-yellow-600 bg-yellow-50' 
                   : 'border-gray-200 hover:border-yellow-300'
               }`}>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xl font-bold text-gray-800">Plano Infinity</h4>
+                  <h4 className="text-lg sm:text-xl font-bold text-gray-800">Plano Infinity</h4>
                   <Crown className="text-yellow-500" size={20} />
                 </div>
-                <p className="text-3xl font-bold text-yellow-600 mb-4">
-                  R$ 197<span className="text-lg text-gray-600">/mês</span>
+                <p className="text-2xl sm:text-3xl font-bold text-yellow-600 mb-4">
+                  R$ 197<span className="text-base sm:text-lg text-gray-600">/mês</span>
                 </p>
                 <ul className="space-y-3 mb-6">
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-yellow-600 rounded-full mt-1.5"></div>
                     Suporte 24h com prioridade
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-yellow-600 rounded-full mt-1.5"></div>
                     Pastas de clientes ILIMITADAS
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-yellow-600 rounded-full mt-1.5"></div>
                     Agendamentos e lembretes
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-yellow-600 rounded-full mt-1.5"></div>
                     Modelos de fichas prontas
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2 text-xs sm:text-sm text-gray-700">
                     <div className="w-1.5 h-1.5 bg-yellow-600 rounded-full mt-1.5"></div>
                     Gráfico de evolução do cliente
                   </li>
                 </ul>
                 {user.currentPlan === 'infinity' ? (
-                  <button disabled className="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded-lg cursor-not-allowed">
+                  <button disabled className="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded-lg cursor-not-allowed text-sm">
                     Plano Atual
                   </button>
                 ) : (
                   <button
                     onClick={() => handleUpgradePlan('infinity')}
-                    className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-white py-2 px-4 rounded-lg hover:from-yellow-600 hover:to-yellow-700 transition-colors"
+                    className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-white py-2 px-4 rounded-lg hover:from-yellow-600 hover:to-yellow-700 transition-colors text-sm"
                   >
                     Selecionar
                   </button>
